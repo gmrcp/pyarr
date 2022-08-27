@@ -36,7 +36,7 @@ struct Cli {
 fn main() -> Result<(), Box<dyn Error>> {
     let _args = Cli::parse();
     let cfg = MyConfig { first_time_use: true, org: "eatkitch".into(), squad: "".into() };
-    confy::store("grrs", cfg)?;
+    confy::store("pyarr", cfg)?;
     // println!("{:?}", cfg);
     // cfg.org = "some other org".into();
     // confy::store("grrs", cfg)?;
