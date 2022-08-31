@@ -1,25 +1,13 @@
 use std::process::Command;
 use std::error::Error;
 use std::thread;
-use std::time::Duration;
 
 use serde::Deserialize;
 use execute::Execute;
 use anyhow::{Context, Result};
 
-#[derive(Deserialize, Debug)]
-pub struct LabelOrTeam {
-    name: String,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct Contributor {
-    login: String,
-}
-
 pub fn check_status() -> Result<(), Box<dyn Error>> {
-    Command::new("gh")
-        .arg("--version")
+    Command::new("gh").arg("--version")
         .execute_check_exit_status_code(0)
         .with_context(|| format!("gh CLI not installed."))?;
     println!("✅ gh CLI installed.");
@@ -27,13 +15,30 @@ pub fn check_status() -> Result<(), Box<dyn Error>> {
 }
 
 pub fn check_auth() -> Result<(), Box<dyn Error>> {
-    Command::new("gh")
-        .arg("auth")
-        .arg("status")
+    Command::new("gh").arg("auth").arg("status")
         .execute_check_exit_status_code(0)
         .with_context(|| format!("gh auth not setup."))?;
     println!("✅ gh is authenticated.");
     Ok(())
+}
+
+pub enum RepoParameters {
+    Name,
+    Owner,
+}
+
+pub fn get_repo_parameter(parameter: RepoParameters) -> Result<(String), Box<dyn Error>> {
+    let args = match parameter {
+        RepoParameters::Owner => ("owner", ".owner | .login"),
+        RepoParameters::Name => ("name", ".name")
+    };
+
+    let output = Command::new("gh")
+        .arg("repo").arg("view").arg("--json").arg(args.0)
+        .arg("-q").arg(args.1)
+        .output()?;
+    let parameter = String::from_utf8(output.stdout)?;
+    Ok(parameter)
 }
 
 pub enum GithubEntity {
@@ -52,6 +57,11 @@ impl GithubEntity {
     }
 }
 
+#[derive(Deserialize, Debug)]
+pub struct LabelOrTeam {
+    name: String,
+}
+
 pub fn get_repo_labels(org: String, repo: String) -> Result<Vec<String>, Box<dyn Error>> {
     let data = run_list_repos(GithubEntity::Labels, org, repo)?;
     let labels_obj: Vec<LabelOrTeam> = serde_json::from_str(&data)?;
@@ -61,17 +71,34 @@ pub fn get_repo_labels(org: String, repo: String) -> Result<Vec<String>, Box<dyn
 }
 
 pub fn get_repo_teams(org: String) -> Result<Vec<String>, Box<dyn Error>> {
-    let output = Command::new("gh")
-        .arg("api")
-        .arg("-H")
-        .arg("Accept: application/vnd.github+json")
-        .arg(format!("/orgs/{}/teams", org))
-        .output()?;
+    let output = get_api_command().arg(format!("/orgs/{}/teams", org)).output()?;
     let data = String::from_utf8(output.stdout)?;
     let teams_obj: Vec<LabelOrTeam> = serde_json::from_str(&data)?;
     let teams: Vec<String> = teams_obj.into_iter().map(|team| team.name).collect();
     println!("Teams: {:?}", teams);
     Ok(teams)
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Team {
+    name: String,
+    organization: Contributor
+}
+
+pub fn get_user_teams(repo_owner: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    let output = get_api_command().arg("/user/teams").output()?;
+    let data = String::from_utf8(output.stdout)?;
+    let teams_obj: Vec<Team> = serde_json::from_str(&data)?;
+    let teams = teams_obj.into_iter()
+        .filter(|team| team.organization.login == repo_owner)
+        .map(|team| team.name)
+        .collect::<Vec<String>>();
+    Ok(teams)
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Contributor {
+    login: String,
 }
 
 pub fn get_repo_contributors(org: String, repo: String) -> Result<Vec<String>, Box<dyn Error>> {
@@ -84,14 +111,15 @@ pub fn get_repo_contributors(org: String, repo: String) -> Result<Vec<String>, B
 
 fn run_list_repos(gh_entity: GithubEntity, org: String, repo: String) -> Result<String, Box<dyn Error>>{
     let entity = gh_entity.as_str();
-    let output = Command::new("gh")
-        .arg("api")
-        .arg("-H")
-        .arg("Accept: application/vnd.github+json")
-        .arg(format!("/repos/{}/{}/{}", org, repo, entity))
-        .output()?;
+    let output = get_api_command().arg(format!("/repos/{}/{}/{}", org, repo, entity)).output()?;
     let result = String::from_utf8(output.stdout);
     Ok(result?)
+}
+
+fn get_api_command() -> Command {
+    let mut command = Command::new("gh");
+    command.arg("api").arg("-H").arg("Accept: application/vnd.github+json");
+    command
 }
 
 pub fn parallel(org: &String, repo: &String) -> Vec<Vec<String>> {
