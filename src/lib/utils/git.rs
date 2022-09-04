@@ -11,7 +11,7 @@ pub fn get_current_branch() -> Result<String, Box<dyn Error>> {
 }
 
 pub fn check_remote_branch(branch_name: &String) -> Result<bool, Box<dyn Error>> {
-    let output = Command::new("git")
+    Command::new("git")
         .arg("ls-remote")
         .arg("--exit-code")
         .arg("--heads")
