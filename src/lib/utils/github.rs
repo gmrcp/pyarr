@@ -1,6 +1,7 @@
 use std::process::Command;
 use std::error::Error;
 use std::thread;
+use std::sync::Arc;
 
 use serde::Deserialize;
 use execute::Execute;
@@ -27,7 +28,7 @@ pub enum RepoParameters {
     Owner,
 }
 
-pub fn get_repo_parameter(parameter: RepoParameters) -> Result<(String), Box<dyn Error>> {
+pub fn get_repo_parameter(parameter: RepoParameters) -> Result<String, Box<dyn Error>> {
     let args = match parameter {
         RepoParameters::Owner => ("owner", ".owner | .login"),
         RepoParameters::Name => ("name", ".name")
@@ -62,15 +63,15 @@ pub struct LabelOrTeam {
     name: String,
 }
 
-pub fn get_repo_labels(org: String, repo: String) -> Result<Vec<String>, Box<dyn Error>> {
-    let data = run_list_repos(GithubEntity::Labels, org, repo)?;
+pub fn get_repo_labels(org: &String, repo: &String) -> Result<Vec<String>, Box<dyn Error>> {
+    let data = run_list_repos(GithubEntity::Labels, &org, &repo)?;
     let labels_obj: Vec<LabelOrTeam> = serde_json::from_str(&data)?;
     let labels: Vec<String> = labels_obj.into_iter().map(|label| label.name).collect();
     println!("Labels: {:?}", labels);
     Ok(labels)
 }
 
-pub fn get_repo_teams(org: String) -> Result<Vec<String>, Box<dyn Error>> {
+pub fn get_repo_teams(org: &String) -> Result<Vec<String>, Box<dyn Error>> {
     let output = get_api_command().arg(format!("/orgs/{}/teams", org)).output()?;
     let data = String::from_utf8(output.stdout)?;
     let teams_obj: Vec<LabelOrTeam> = serde_json::from_str(&data)?;
@@ -101,7 +102,7 @@ pub struct Contributor {
     login: String,
 }
 
-pub fn get_repo_contributors(org: String, repo: String) -> Result<Vec<String>, Box<dyn Error>> {
+pub fn get_repo_contributors(org: &String, repo: &String) -> Result<Vec<String>, Box<dyn Error>> {
     let data = run_list_repos(GithubEntity::Contributors, org, repo)?;
     let contributors_obj: Vec<Contributor> = serde_json::from_str(&data)?;
     let contributors: Vec<String> = contributors_obj.into_iter().map(|contributor| contributor.login).collect();
@@ -109,11 +110,11 @@ pub fn get_repo_contributors(org: String, repo: String) -> Result<Vec<String>, B
     Ok(contributors)
 }
 
-fn run_list_repos(gh_entity: GithubEntity, org: String, repo: String) -> Result<String, Box<dyn Error>>{
+fn run_list_repos(gh_entity: GithubEntity, org: &String, repo: &String) -> Result<String, Box<dyn Error>>{
     let entity = gh_entity.as_str();
     let output = get_api_command().arg(format!("/repos/{}/{}/{}", org, repo, entity)).output()?;
-    let result = String::from_utf8(output.stdout);
-    Ok(result?)
+    let result = String::from_utf8(output.stdout)?;
+    Ok(result)
 }
 
 fn get_api_command() -> Command {
@@ -122,25 +123,34 @@ fn get_api_command() -> Command {
     command
 }
 
-pub fn parallel(org: &String, repo: &String) -> Vec<Vec<String>> {
+pub fn parallel(org: &String, repo: &String) -> Vec<String> {
     let mut threads = vec![];
-    let thread_org = org.clone();
-    let thread_repo = repo.clone();
+    let org_arc = Arc::new(org.clone());
+    let repo_arc = Arc::new(repo.clone());
+
+    let thread_org = Arc::clone(&org_arc);
     threads.push(thread::spawn(move || -> Vec<String> {
-        get_repo_labels(thread_org, thread_repo).unwrap()
-    }));
-    let thread_org = org.clone();
-    threads.push(thread::spawn(move || -> Vec<String> {
-        get_repo_teams(thread_org.clone()).unwrap()
-    }));
-    let thread_org = org.clone();
-    let thread_repo = repo.clone();
-    threads.push(thread::spawn(move || -> Vec<String> {
-        get_repo_contributors(thread_org, thread_repo).unwrap()
+        get_repo_teams(&thread_org).unwrap_or(vec![])
     }));
 
-    let results = threads.into_iter().map(|thread| thread.join().unwrap()).collect::<Vec<Vec<String>>>();
+    let thread_org = Arc::clone(&org_arc);
+    let thread_repo = Arc::clone(&repo_arc);
+    threads.push(thread::spawn(move || -> Vec<String> {
+        get_repo_contributors(&thread_org, &thread_repo).unwrap_or(vec![])
+    }));
+
+    let results = threads.into_iter().map(|thread| thread.join().unwrap()).flatten().collect::<Vec<String>>();
 
     println!("Final result: {:?}", results);
     results
+}
+
+pub fn create_pr(title: &String, description: &String, labels: &Vec<String>, reviewers: &Vec<String>) -> Command {
+    let mut command = Command::new("gh");
+    command.arg("pr").arg("create")
+        .arg("--title").arg(title)
+        .arg("--body").arg(description)
+        .arg("--label").arg(labels.join(","))
+        .arg ("--reviewer").arg(reviewers.join(","));
+    command
 }

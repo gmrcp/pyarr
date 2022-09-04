@@ -1,14 +1,14 @@
+use std::error::Error;
+
 use clap::{Parser, Subcommand};
 use confy;
 use serde::{Serialize, Deserialize};
-use dialoguer::{Select, MultiSelect, Confirm};
+use dialoguer::{Select, MultiSelect, Confirm, Input};
 use colored::Colorize;
 use cli_table::{print_stdout, Table, WithTitle};
 
-use std::error::Error;
-
 mod lib;
-use lib::utils::{github};
+use lib::utils::{github, git};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct PyarrConfig {
@@ -26,9 +26,7 @@ struct Organization {
 
 impl std::default::Default for PyarrConfig {
     fn default() -> Self {
-        Self {
-            orgs: vec![]
-        }
+        Self { orgs: vec![] }
     }
 }
 
@@ -117,18 +115,37 @@ fn main() -> Result<(), Box<dyn Error>> {
             return Ok(());
         },
         Commands::New { bare, default } => {
+            let current_branch = git::get_current_branch()?;
+            println!("The branch: {current_branch:?}");
+            // let repo_owner = String::from("gmrcp");
+            // let repo_name = String::from("pyarr");
+            
+            let title: String = Input::new().with_prompt("PR title:").interact_text()?;
+            let description: String = Input::new().with_prompt("PR description:").interact_text()?;
+            
+            let available_labels = github::get_repo_labels(&repo_owner, &repo_name)?;
+            let chosen_labels_idx = MultiSelect::new().with_prompt("Select labels:").items(&available_labels).interact()?;
+            let chosen_labels = available_labels
+                .into_iter()
+                .enumerate()
+                .filter(|(index, _)| chosen_labels_idx.contains(index))
+                .map(|(_, ele)| ele)
+                .collect::<Vec<String>>();
+
+            let available_reviewers = github::parallel(&repo_owner, &repo_name);
+            let chosen_reviewers_idx: Vec<usize> = MultiSelect::new().with_prompt("Select reviewers:").items(&available_reviewers).interact()?;
+            let chosen_reviewers = available_reviewers
+                .into_iter()
+                .enumerate()
+                .filter(|(index, _)| chosen_reviewers_idx.contains(index))
+                .map(|(_, ele)| ele)
+                .collect::<Vec<String>>();
+        
+
+            github::create_pr(&title, &description, &chosen_labels, &chosen_reviewers);
             return Ok(());
         }
     } 
-
-    // let results = github::parallel(&repo_owner, &repo_name);
-
-    // let chosen : Vec<usize> = MultiSelect::new()
-    //     .with_prompt("Select labels")
-    //     .items(&results[0])
-    //     .interact()?;
-
-    // Ok(())
 }
 
 // TODO
