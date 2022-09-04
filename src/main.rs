@@ -117,8 +117,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         Commands::New { bare, default } => {
             let current_branch = git::get_current_branch()?;
             println!("The branch: {current_branch:?}");
+            // let current_branch = "master".into();
+            git::check_remote_branch(&current_branch)?;
             // let repo_owner = String::from("gmrcp");
             // let repo_name = String::from("pyarr");
+
+            return Ok(());
             
             let title: String = Input::new().with_prompt("PR title:").interact_text()?;
             let description: String = Input::new().with_prompt("PR description:").interact_text()?;
