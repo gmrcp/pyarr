@@ -162,8 +162,20 @@ pub fn create_pr (title: String, description: String, labels: &Vec<String>, revi
     if reviewers.is_empty().not() {
         command.arg("--reviewer").arg(reviewers.join(","));
     }
+    command.stdout(Stdio::null());
     let output = command.execute_output()?;
     println!("{output:?}");
+
+    if let Some(exit_code) = output.status.code() {
+        if exit_code == 0 {
+            println!("Git push Ok.");
+        } else {
+            eprintln!("Git push Failed.");
+        }
+    } else {
+        eprintln!("Git push Interrupted!");
+    }
+
     Ok(())
 }
 

@@ -136,7 +136,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             let chosen_reviewers = io::multiselect("Select reviewers", available_reviewers)?;
 
             github::create_pr(title, description, &chosen_labels, &chosen_reviewers)?;
-            github::open_pr_in_browser(&current_branch)?;
 
             process::exit(0);
         }
