@@ -9,7 +9,7 @@ use colored::Colorize;
 use cli_table::{print_stdout, Table, WithTitle};
 
 mod lib;
-use lib::{io, jira};
+use lib::{io, regexpr};
 use lib::utils::{github, git};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                let chosen_team = io::select("Select a team:", &user_teams)?;
+                let chosen_team = io::select("Select a team", &user_teams)?;
 
                 cfg.orgs.push(Organization { name: repo_owner, default_team: user_teams.remove(chosen_team) });
 
@@ -112,19 +112,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             process::exit(0);
         },
         Commands::New { bare, default } => {
-            let pr_type = io::select_pr_type()?;
-            let current_branch = git::current_branch_name()?;
             git::status()?;
 
-            return Ok(());
+            let current_branch = git::current_branch_name()?;
+            
             git::push_branch(&current_branch)?;
             
+            let pr_type = io::select_pr_type()?;
             let title = format!("{}/{}", pr_type, current_branch);
 
             let mut description = String::from("");
-            if let Some(jira_ticket) = jira::get_jira_ticket_from_branch_name(&current_branch) {
+            if let Some(jira_ticket) = regexpr::get_jira_ticket_from_branch_name(&current_branch) {
                 description = format!("[Task](https://kitch.atlassian.net/browse/{}", jira_ticket);
             }
+
+            let repo_owner = String::from("eatkitch");
+            let repo_name = String::from("api");
 
             let available_labels = github::get_repo_labels(&repo_owner, &repo_name)?;
             let chosen_labels = io::multiselect("Select labels", available_labels)?;
@@ -146,4 +149,3 @@ fn main() -> Result<(), Box<dyn Error>> {
 // 3. async
 // 4. criaçao de link para jira
 // 5. criaçao do PR
-// 6. abrir link em pagina

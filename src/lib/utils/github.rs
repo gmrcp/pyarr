@@ -35,10 +35,9 @@ pub fn get_repo_parameter(parameter: RepoParameters) -> Result<String, Box<dyn E
         RepoParameters::Name => ("name", ".name")
     };
 
-    let output = Command::new("gh")
-        .arg("repo").arg("view").arg("--json").arg(args.0)
-        .arg("-q").arg(args.1)
-        .output()?;
+    let mut command = command("gh repo view --json");
+    command.arg(args.0).arg("-q").arg(args.1);
+    let output = command.output()?;
     let parameter = String::from_utf8(output.stdout)?;
     Ok(parameter.trim_end().to_string())
 }
@@ -67,7 +66,10 @@ pub struct LabelOrTeam {
 pub fn get_repo_labels(org: &String, repo: &String) -> Result<Vec<String>, Box<dyn Error>> {
     let data = run_list_repos(GithubEntity::Labels, &org, &repo)?;
     let labels_obj: Vec<LabelOrTeam> = serde_json::from_str(&data)?;
-    let labels: Vec<String> = labels_obj.into_iter().map(|label| label.name).collect();
+    let labels: Vec<String> = labels_obj
+        .into_iter()
+        .map(|label| label.name)
+        .collect();
     Ok(labels)
 }
 
@@ -75,7 +77,10 @@ pub fn get_repo_teams(org: &String) -> Result<Vec<String>, Box<dyn Error>> {
     let output = get_api_command().arg(format!("/orgs/{}/teams", org)).output()?;
     let data = String::from_utf8(output.stdout)?;
     let teams_obj: Vec<LabelOrTeam> = serde_json::from_str(&data)?;
-    let teams: Vec<String> = teams_obj.into_iter().map(|team| team.name).collect();
+    let teams: Vec<String> = teams_obj
+        .into_iter()
+        .map(|team| format!("{}/{}", org, team.name))
+        .collect();
     Ok(teams)
 }
 
@@ -89,7 +94,8 @@ pub fn get_user_teams(repo_owner: &str) -> Result<Vec<String>, Box<dyn Error>> {
     let output = get_api_command().arg("/user/teams").output()?;
     let data = String::from_utf8(output.stdout)?;
     let teams_obj: Vec<Team> = serde_json::from_str(&data)?;
-    let teams = teams_obj.into_iter()
+    let teams = teams_obj
+        .into_iter()
         .filter(|team| team.organization.login == repo_owner)
         .map(|team| team.name)
         .collect::<Vec<String>>();
@@ -104,8 +110,11 @@ pub struct Contributor {
 pub fn get_repo_contributors(org: &String, repo: &String) -> Result<Vec<String>, Box<dyn Error>> {
     let data = run_list_repos(GithubEntity::Contributors, org, repo)?;
     let contributors_obj: Vec<Contributor> = serde_json::from_str(&data)?;
-    let contributors: Vec<String> = contributors_obj.into_iter().map(|contributor| contributor.login).collect();
-    println!("Contributors: {:?}", contributors);
+    let mut contributors: Vec<String> = contributors_obj
+        .into_iter()
+        .map(|contributor| contributor.login)
+        .collect();
+    contributors.sort();
     Ok(contributors)
 }
 
@@ -145,7 +154,6 @@ pub fn parallel(org: &String, repo: &String) -> Vec<String> {
 
 pub fn create_pr (title: String, description: String, labels: &Vec<String>, reviewers: &Vec<String>) -> Result<(), Box<dyn Error>> {
     let mut command = command("gh pr create");
-
     command.arg("--title").arg(title);
     command.arg("--body").arg(description);
     if labels.is_empty().not() {
@@ -154,7 +162,8 @@ pub fn create_pr (title: String, description: String, labels: &Vec<String>, revi
     if reviewers.is_empty().not() {
         command.arg("--reviewer").arg(reviewers.join(","));
     }
-    let output = command.output()?;
+    let output = command.execute_output()?;
+    println!("{output:?}");
     Ok(())
 }
 
