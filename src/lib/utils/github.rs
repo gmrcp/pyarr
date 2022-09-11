@@ -162,7 +162,9 @@ pub fn create_pr (title: String, description: String, labels: &Vec<String>, revi
     if reviewers.is_empty().not() {
         command.arg("--reviewer").arg(reviewers.join(","));
     }
-    command.stdout(Stdio::null());
+    command.arg("-w");
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
     let output = command.execute_output()?;
     println!("{output:?}");
 
