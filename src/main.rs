@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::process;
 
 use clap::{Parser, Subcommand};
 use confy;
@@ -8,6 +9,7 @@ use colored::Colorize;
 use cli_table::{print_stdout, Table, WithTitle};
 
 mod lib;
+use lib::{io, jira};
 use lib::utils::{github, git};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -80,7 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 print_stdout(cfg.orgs.with_title()).unwrap();
                 return Ok(());
             }
-            // let repo_owner = String::from("eatkitch");
+            let repo_owner = String::from("eatkitch");
             let mut user_teams = github::get_user_teams(&repo_owner).unwrap();
 
             if user_teams.len() > 0 {
@@ -98,56 +100,42 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                let chosen_team = Select::new()
-                    .with_prompt("Select a team")
-                    .items(&user_teams)
-                    .default(0)
-                    .interact()?;
-
-                println!("chosen team: {chosen_team:?}");
+                let chosen_team = io::select("Select a team:", &user_teams)?;
 
                 cfg.orgs.push(Organization { name: repo_owner, default_team: user_teams.remove(chosen_team) });
+
                 confy::store("pyarr", cfg)?;
             } else {
                 println!("You don't belong to any team of this repo's organization!");
             }
 
-            return Ok(());
+            process::exit(0);
         },
         Commands::New { bare, default } => {
-            let current_branch = git::get_current_branch()?;
-            println!("The branch: {current_branch:?}");
-            // let current_branch = "master".into();
-            git::check_remote_branch(&current_branch)?;
-            // let repo_owner = String::from("gmrcp");
-            // let repo_name = String::from("pyarr");
+            let pr_type = io::select_pr_type()?;
+            let current_branch = git::current_branch_name()?;
+            git::status()?;
 
             return Ok(());
+            git::push_branch(&current_branch)?;
             
-            let title: String = Input::new().with_prompt("PR title:").interact_text()?;
-            let description: String = Input::new().with_prompt("PR description:").interact_text()?;
-            
+            let title = format!("{}/{}", pr_type, current_branch);
+
+            let mut description = String::from("");
+            if let Some(jira_ticket) = jira::get_jira_ticket_from_branch_name(&current_branch) {
+                description = format!("[Task](https://kitch.atlassian.net/browse/{}", jira_ticket);
+            }
+
             let available_labels = github::get_repo_labels(&repo_owner, &repo_name)?;
-            let chosen_labels_idx = MultiSelect::new().with_prompt("Select labels:").items(&available_labels).interact()?;
-            let chosen_labels = available_labels
-                .into_iter()
-                .enumerate()
-                .filter(|(index, _)| chosen_labels_idx.contains(index))
-                .map(|(_, ele)| ele)
-                .collect::<Vec<String>>();
+            let chosen_labels = io::multiselect("Select labels", available_labels)?;
 
             let available_reviewers = github::parallel(&repo_owner, &repo_name);
-            let chosen_reviewers_idx: Vec<usize> = MultiSelect::new().with_prompt("Select reviewers:").items(&available_reviewers).interact()?;
-            let chosen_reviewers = available_reviewers
-                .into_iter()
-                .enumerate()
-                .filter(|(index, _)| chosen_reviewers_idx.contains(index))
-                .map(|(_, ele)| ele)
-                .collect::<Vec<String>>();
-        
+            let chosen_reviewers = io::multiselect("Select reviewers", available_reviewers)?;
 
-            github::create_pr(&title, &description, &chosen_labels, &chosen_reviewers);
-            return Ok(());
+            github::create_pr(title, description, &chosen_labels, &chosen_reviewers)?;
+            github::open_pr_in_browser(&current_branch)?;
+
+            process::exit(0);
         }
     } 
 }
